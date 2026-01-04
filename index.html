@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>ระบบรวมเวลาเข้าเวร</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: "Segoe UI", sans-serif;
+            background: linear-gradient(135deg, #74ebd5, #9face6);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: #fff;
+            padding: 25px;
+            width: 100%;
+            max-width: 480px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        label {
+            font-weight: bold;
+            margin-top: 10px;
+            display: block;
+        }
+
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        th, td {
+            border-bottom: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+
+        th {
+            background: #f2f2f2;
+        }
+
+        .delete-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 5px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .delete-btn:hover {
+            background: #c0392b;
+        }
+
+        .total {
+            margin-top: 10px;
+            font-weight: bold;
+            text-align: right;
+        }
+
+        .export {
+            background: #2196F3;
+            margin-top: 10px;
+        }
+
+        .export:hover {
+            background: #1976D2;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🕒 ระบบรวมเวลาเข้าเวร</h2>
+
+    <!-- ผู้ใช้งาน -->
+    <label>ชื่อผู้ใช้งาน</label>
+    <input type="text" id="username" placeholder="เช่น 65001">
+    <button onclick="loadUser()">เข้าสู่ระบบ</button>
+
+    <!-- กรอกเวลา -->
+    <label>วันที่เข้าเวร</label>
+    <input type="date" id="date">
+
+    <label>เวลาเริ่ม</label>
+    <input type="time" id="start">
+
+    <label>เวลาสิ้นสุด</label>
+    <input type="time" id="end">
+
+    <button onclick="addShift()">เพิ่มเวลาเข้าเวร</button>
+
+    <!-- ตาราง -->
+    <table>
+        <thead>
+            <tr>
+                <th>วันที่</th>
+                <th>เวลา</th>
+                <th>ชั่วโมง</th>
+                <th>ลบ</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+
+    <div class="total">
+        รวมทั้งหมด: <span id="totalHours">0</span> ชั่วโมง
+    </div>
+
+    <button class="export" onclick="exportCSV()">ส่งออกเป็น Excel</button>
+</div>
+
+<script>
+    let currentUser = "";
+    let shifts = [];
+
+    function loadUser() {
+        const username = document.getElementById("username").value.trim();
+        if (!username) {
+            alert("กรุณากรอกชื่อผู้ใช้งาน");
+            return;
+        }
+
+        currentUser = "duty_" + username;
+        shifts = JSON.parse(localStorage.getItem(currentUser)) || [];
+        loadData();
+    }
+
+    function saveData() {
+        if (currentUser) {
+            localStorage.setItem(currentUser, JSON.stringify(shifts));
+        }
+    }
+
+    function loadData() {
+        const tbody = document.getElementById("tableBody");
+        tbody.innerHTML = "";
+        let total = 0;
+
+        shifts.forEach((s, i) => {
+            total += s.hours;
+
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${s.date}</td>
+                <td>${s.start} - ${s.end}</td>
+                <td>${s.hours.toFixed(2)}</td>
+                <td><button class="delete-btn" onclick="deleteRow(${i})">🗑️</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById("totalHours").innerText = total.toFixed(2);
+    }
+
+    function addShift() {
+        if (!currentUser) {
+            alert("กรุณาเข้าสู่ระบบก่อน");
+            return;
+        }
+
+        const date = document.getElementById("date").value;
+        const start = document.getElementById("start").value;
+        const end = document.getElementById("end").value;
+
+        if (!date || !start || !end) {
+            alert("กรุณากรอกข้อมูลให้ครบ");
+            return;
+        }
+
+        const startTime = new Date("1970-01-01T" + start);
+        const endTime = new Date("1970-01-01T" + end);
+
+        let hours = (endTime - startTime) / (1000 * 60 * 60);
+        if (hours < 0) hours += 24;
+
+        shifts.push({ date, start, end, hours });
+        saveData();
+        loadData();
+    }
+
+    function deleteRow(index) {
+        shifts.splice(index, 1);
+        saveData();
+        loadData();
+    }
+
+    function exportCSV() {
+        if (shifts.length === 0) {
+            alert("ไม่มีข้อมูลให้ส่งออก");
+            return;
+        }
+
+        let csv = "วันที่,เวลาเริ่ม,เวลาสิ้นสุด,ชั่วโมง\n";
+        shifts.forEach(s => {
+            csv += `${s.date},${s.start},${s.end},${s.hours.toFixed(2)}\n`;
+        });
+
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "เวลาเข้าเวร.csv";
+        a.click();
+    }
+</script>
+
+</body>
+</html>
