@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ระบบรวมเวลาเข้าเวร</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {
+    font-family: "Segoe UI", sans-serif;
+    background: linear-gradient(135deg, #74ebd5, #9face6);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.container {
+    background: #fff;
+    padding: 25px;
+    width: 100%;
+    max-width: 900px;
+    border-radius: 16px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+}
+h2, h3 { text-align: center; }
+label { font-weight: bold; margin-top: 10px; display: block; }
+input, select, button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 6px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    cursor: pointer;
+    margin-top: 10px;
+}
+button:hover { background: #45a049; }
+
+.export-btn { background:#3498db; }
+.export-btn:hover { background:#2980b9; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    font-size: 14px;
+}
+th, td {
+    border-bottom: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+}
+th { background: #f2f2f2; }
+
+.delete-btn {
+    background: #e74c3c;
+    padding: 5px 8px;
+    border-radius: 6px;
+}
+
+.total {
+    margin-top: 10px;
+    font-weight: bold;
+    text-align: right;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+<h2>🕒 ระบบรวมเวลาเข้าเวร</h2>
+
+<!-- LOGIN -->
+<label>ชื่อผู้ใช้งาน</label>
+<input type="text" id="username" placeholder="เช่น 65001">
+
+<label>ประเภทผู้ใช้</label>
+<select id="role" onchange="toggleAdminPass()">
+    <option value="user">User</option>
+    <option value="admin">Admin</option>
+</select>
+
+<div id="adminPassBox" style="display:none">
+    <label>รหัสผ่านแอดมิน</label>
+    <input type="password" id="adminPass">
+</div>
+
+<button onclick="loadUser()">เข้าสู่ระบบ</button>
+
+<!-- USER INPUT -->
+<div id="userSection" style="display:none">
+    <label>วันที่</label>
+    <input type="date" id="date">
+
+    <label>เวลาเริ่ม</label>
+    <input type="time" id="start">
+
+    <label>เวลาสิ้นสุด</label>
+    <input type="time" id="end">
+
+    <button onclick="addShift()">เพิ่มเวลาเข้าเวร</button>
+</div>
+
+<!-- TABLE -->
+<table>
+    <thead id="tableHead"></thead>
+    <tbody id="tableBody"></tbody>
+</table>
+
+<div class="total">
+    Total Hours: <span id="totalHours">0</span>
+</div>
+
+<button class="export-btn" onclick="exportExcel()">📤 Export to Excel</button>
+
+<hr style="margin:25px 0">
+
+<!-- ADMIN USER SUMMARY -->
+<div id="adminUserList" style="display:none">
+<h3>👥 User Summary (Admin)</h3>
+<table>
+    <thead>
+        <tr>
+            <th>User</th>
+            <th>Total Records</th>
+            <th>Total Hours</th>
+            <th>Delete User</th>
+        </tr>
+    </thead>
+    <tbody id="adminUserBody"></tbody>
+</table>
+</div>
+</div>
+
+<script>
+const ADMIN_PASSWORD = "admin123";
+
+let currentUser = "";
+let role = "";
+let shifts = [];
+
+const roleSelect = document.getElementById("role");
+const adminPassBox = document.getElementById("adminPassBox");
+const adminPass = document.getElementById("adminPass");
+const userSection = document.getElementById("userSection");
+const adminUserList = document.getElementById("adminUserList");
+
+function toggleAdminPass() {
+    adminPassBox.style.display =
+        roleSelect.value === "admin" ? "block" : "none";
+}
+
+function loadUser() {
+    const username = document.getElementById("username").value.trim();
+    role = roleSelect.value;
+
+    if (!username) return alert("กรุณากรอกชื่อผู้ใช้งาน");
+
+    if (role === "admin") {
+        if (adminPass.value !== ADMIN_PASSWORD)
+            return alert("รหัสผ่านแอดมินไม่ถูกต้อง");
+
+        userSection.style.display = "none";
+        adminUserList.style.display = "block";
+        loadAllUsers();
+    } else {
+        adminUserList.style.display = "none";
+        currentUser = "duty_" + username;
+        shifts = JSON.parse(localStorage.getItem(currentUser)) || [];
+        userSection.style.display = "block";
+        loadUserTable();
+    }
+}
+
+function saveData() {
+    if (role === "user") {
+        localStorage.setItem(currentUser, JSON.stringify(shifts));
+    }
+}
+
+function addShift() {
+    if (!date.value || !start.value || !end.value)
+        return alert("กรุณากรอกข้อมูลให้ครบ");
+
+    let h = (new Date("1970-01-01T"+end.value) -
+             new Date("1970-01-01T"+start.value)) / 3600000;
+    if (h < 0) h += 24;
+
+    shifts.push({
+        date: date.value,
+        start: start.value,
+        end: end.value,
+        hours: h
+    });
+
+    saveData();
+    loadUserTable();
+}
+
+function deleteUserRow(i) {
+    shifts.splice(i,1);
+    saveData();
+    loadUserTable();
+}
+
+/* USER TABLE */
+function loadUserTable() {
+    tableHead.innerHTML = `
+    <tr><th>Date</th><th>Time</th><th>Hours</th><th>Delete</th></tr>`;
+    tableBody.innerHTML = "";
+
+    let total = 0;
+    shifts.forEach((s,i)=>{
+        total += s.hours;
+        tableBody.innerHTML += `
+        <tr>
+            <td>${s.date}</td>
+            <td>${s.start} - ${s.end}</td>
+            <td>${s.hours.toFixed(2)}</td>
+            <td><button class="delete-btn" onclick="deleteUserRow(${i})">🗑️</button></td>
+        </tr>`;
+    });
+    totalHours.innerText = total.toFixed(2);
+}
+
+/* ADMIN */
+function loadAllUsers() {
+    shifts = [];
+    for (let key in localStorage) {
+        if (key.startsWith("duty_")) {
+            const user = key.replace("duty_","");
+            const data = JSON.parse(localStorage.getItem(key)) || [];
+            data.forEach((s,i)=>{
+                shifts.push({...s,user,key,index:i});
+            });
+        }
+    }
+    loadAdminTable();
+    loadAdminUserSummary();
+}
+
+function deleteAdminRow(key,index) {
+    const data = JSON.parse(localStorage.getItem(key));
+    data.splice(index,1);
+    localStorage.setItem(key,JSON.stringify(data));
+    loadAllUsers();
+}
+
+function loadAdminTable() {
+    tableHead.innerHTML = `
+    <tr><th>User</th><th>Date</th><th>Start</th><th>End</th><th>Hours</th><th>Delete</th></tr>`;
+    tableBody.innerHTML = "";
+
+    let total = 0;
+    shifts.forEach(s=>{
+        total += s.hours;
+        tableBody.innerHTML += `
+        <tr>
+            <td>${s.user}</td>
+            <td>${s.date}</td>
+            <td>${s.start}</td>
+            <td>${s.end}</td>
+            <td>${s.hours.toFixed(2)}</td>
+            <td><button class="delete-btn" onclick="deleteAdminRow('${s.key}',${s.index})">🗑️</button></td>
+        </tr>`;
+    });
+    totalHours.innerText = total.toFixed(2);
+}
+
+/* ADMIN USER SUMMARY */
+function loadAdminUserSummary() {
+    adminUserBody.innerHTML = "";
+    for (let key in localStorage) {
+        if (key.startsWith("duty_")) {
+            const user = key.replace("duty_","");
+            const data = JSON.parse(localStorage.getItem(key)) || [];
+            let total = 0;
+            data.forEach(s=> total+=s.hours);
+
+            adminUserBody.innerHTML += `
+            <tr>
+                <td>${user}</td>
+                <td>${data.length}</td>
+                <td>${total.toFixed(2)}</td>
+                <td><button class="delete-btn" onclick="deleteWholeUser('${key}')">🗑️</button></td>
+            </tr>`;
+        }
+    }
+}
+
+function deleteWholeUser(key) {
+    if (!confirm("Delete all data of this user?")) return;
+    localStorage.removeItem(key);
+    loadAllUsers();
+}
+
+/* EXPORT */
+
+function exportExcel() {
+    let html = `
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body { font-family: Tahoma, sans-serif; }
+            h2 { text-align: center; }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }
+            th, td {
+                border: 1px solid #000;
+                padding: 6px;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+    `;
+
+    let filename = "";
+
+    if (role === "user") {
+        const username = currentUser.replace("duty_","");
+        filename = username + "_duty_hours.doc";
+
+        html += `<h2>รายงานเวลาเข้าเวร</h2>`;
+        html += `<p><b>ชื่อผู้ใช้:</b> ${username}</p>`;
+
+        html += `
+        <table>
+            <tr>
+                <th>วันที่</th>
+                <th>เวลาเริ่ม</th>
+                <th>เวลาสิ้นสุด</th>
+                <th>ชั่วโมงรวม</th>
+            </tr>
+        `;
+
+        shifts.forEach(s => {
+            html += `
+            <tr>
+                <td>${s.date}</td>
+                <td>${s.start}</td>
+                <td>${s.end}</td>
+                <td>${s.hours.toFixed(2)}</td>
+            </tr>
+            `;
+        });
+
+        html += `</table>`;
+    } else {
+        filename = "all_users_duty_hours.doc";
+
+        html += `<h2>รายงานเวลาเข้าเวร (Admin)</h2>`;
+
+        html += `
+        <table>
+            <tr>
+                <th>ชื่อผู้ใช้</th>
+                <th>วันที่</th>
+                <th>เริ่ม</th>
+                <th>สิ้นสุด</th>
+                <th>ชั่วโมง</th>
+            </tr>
+        `;
+
+        shifts.forEach(s => {
+            html += `
+            <tr>
+                <td>${s.user}</td>
+                <td>${s.date}</td>
+                <td>${s.start}</td>
+                <td>${s.end}</td>
+                <td>${s.hours.toFixed(2)}</td>
+            </tr>
+            `;
+        });
+
+        html += `</table>`;
+    }
+
+    html += `</body></html>`;
+
+    const blob = new Blob(
+        ['\ufeff', html],
+        { type: 'application/msword' }
+    );
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+}
+
+
+</script>
+</body>
+</html>
